@@ -9,7 +9,7 @@ trait TestTrait1: 'static + Sync + Send {
 
 
 #[async_trait::async_trait]
-#[sfo_event]
+#[sfo_event(emitter=TestEmitter)]
 pub trait TestTrait2<T:'static + Send + Sync>: 'static + Sync + Send {
     async fn test(&self, t: &T) -> Result<(), ()>;
 }

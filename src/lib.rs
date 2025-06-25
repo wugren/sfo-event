@@ -1,14 +1,42 @@
 use proc_macro2::{Ident, Span, TokenStream};
-use quote::quote;
+use quote::{quote};
 use syn::{parse_macro_input, ConstParam, FnArg, GenericParam, Generics, ItemTrait, ReturnType, Token, TraitItem, TypeParam};
-use syn::parse::Parser;
+use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::token::Async;
 
+struct Args {
+    pub name: Option<Ident>,
+}
+
+impl Parse for Args {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        while !input.is_empty() {
+            let name = input.parse::<syn::Ident>()?;
+            let _eq = input.parse::<Token![=]>()?;
+            let value = input.parse::<syn::Ident>()?;
+
+            return match name.to_string().as_str() {
+                "emitter" => {
+                    Ok(Args {
+                        name: Some(value)
+                    })
+                },
+                _ => Err(syn::Error::new(name.span(), "unknown param"))
+            }
+        }
+
+        Ok(Self {
+            name: None
+        })
+    }
+}
+
 #[proc_macro_attribute]
-pub fn sfo_event(_args: proc_macro::TokenStream, input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+pub fn sfo_event(args: proc_macro::TokenStream, input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let attrs = parse_macro_input!(args as Args);
     let item = parse_macro_input!(input as ItemTrait);
-    impl_macro(item).unwrap_or_else(to_compile_errors).into()
+    impl_macro(attrs, item).unwrap_or_else(to_compile_errors).into()
 }
 
 fn to_compile_errors(errors: Vec<syn::Error>) -> TokenStream {
@@ -16,8 +44,8 @@ fn to_compile_errors(errors: Vec<syn::Error>) -> TokenStream {
     quote!(#(#compile_errors)*)
 }
 
-fn impl_macro(input: ItemTrait) -> Result<TokenStream, Vec<syn::Error>> {
-    let emitter = generate_emitter_def(&input)?;
+fn impl_macro(args: Args, input: ItemTrait) -> Result<TokenStream, Vec<syn::Error>> {
+    let emitter = generate_emitter_def(&args, &input)?;
     let expanded = quote! {
         #input
 
@@ -26,11 +54,15 @@ fn impl_macro(input: ItemTrait) -> Result<TokenStream, Vec<syn::Error>> {
     Ok(expanded)
 }
 
-fn generate_emitter_def(input: &ItemTrait) -> Result<TokenStream, Vec<syn::Error>>{
+fn generate_emitter_def(args: &Args, input: &ItemTrait) -> Result<TokenStream, Vec<syn::Error>>{
     let generics = &input.generics;
     let name = &input.ident;
     let where_clause = &input.generics.where_clause;
-    let emitter_name = Ident::new(&format!("{}Emitter", name), Span::call_site());
+    let emitter_name = if args.name.is_some() {
+        args.name.clone().unwrap()
+    } else {
+        Ident::new(&format!("{}Emitter", name), Span::call_site())
+    };
 
     let generic_input = generate_generic_input(generics);
     let emiter_impl = generate_emitter_impl(&input.items);
